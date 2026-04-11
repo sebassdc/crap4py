@@ -63,7 +63,7 @@ def test_coverage_run_failure_exits(mock_exists, mock_run, mock_exit, capsys):
     assert exc.value.code == 1
     mock_exit.assert_called_once_with(1)
     out = capsys.readouterr().out
-    assert "Coverage failed" in out
+    assert "coverage run failed" in out
     assert "1" in out
 
 
@@ -121,3 +121,22 @@ def test_coverage_json_timeout_exits(mock_exists, mock_run, mock_exit, capsys):
     mock_exit.assert_called_once_with(1)
     out = capsys.readouterr().out
     assert "coverage json timed out" in out
+
+
+@patch("crap4py.__main__.format_report", return_value="REPORT")
+@patch("crap4py.__main__.sort_by_crap", return_value=FAKE_ENTRIES)
+@patch("crap4py.__main__.analyze_file", return_value=FAKE_ENTRIES)
+@patch("crap4py.__main__.parse_coverage", return_value={})
+@patch("crap4py.__main__.filter_sources", side_effect=lambda s, f: s)
+@patch("crap4py.__main__.find_source_files", return_value=["src/crap4py/core.py"])
+@patch("crap4py.__main__.subprocess.run", return_value=_make_run(0))
+@patch("crap4py.__main__.os.remove", side_effect=OSError("permission denied"))
+@patch("crap4py.__main__.os.path.exists", return_value=True)
+def test_stale_file_remove_oserror_is_swallowed(
+    mock_exists, mock_remove, mock_run, mock_find, mock_filter,
+    mock_parse, mock_analyze, mock_sort, mock_fmt, capsys,
+):
+    # If os.remove raises, main() should continue without failing.
+    main()
+    out = capsys.readouterr().out
+    assert "REPORT" in out

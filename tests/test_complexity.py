@@ -110,6 +110,30 @@ class TestNestedFunctions:
         assert cyclomatic_complexity(src) == 1
 
 
+class TestMatchCase:
+    def test_match_case_counts_each_case(self):
+        src = (
+            "def foo(x):\n"
+            "    match x:\n"
+            "        case 1:\n"
+            "            return 'one'\n"
+            "        case 2:\n"
+            "            return 'two'\n"
+            "        case _:\n"
+            "            return 'other'"
+        )
+        # 3 cases -> 3 decisions -> CC 4
+        assert cyclomatic_complexity(src) == 4
+
+
+class TestModuleLevel:
+    def test_module_level_source_with_branches(self):
+        # cyclomatic_complexity falls back to module-level counting
+        # when source has no function definition.
+        src = "if x:\n    y = 1\nelse:\n    y = 0"
+        assert cyclomatic_complexity(src) == 2
+
+
 class TestCombined:
     def test_multiple_decision_points(self):
         src = (

@@ -2,26 +2,32 @@ import ast
 
 from crap4py.models import FunctionInfo
 
+_SKIP_TYPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+_SIMPLE_DECISION_TYPES = (
+    ast.If, ast.IfExp, ast.For, ast.AsyncFor, ast.While, ast.ExceptHandler,
+)
+
+
+def _node_decisions(child):
+    """Decision points contributed by a single AST node (non-recursive)."""
+    if isinstance(child, _SIMPLE_DECISION_TYPES):
+        return 1
+    if isinstance(child, ast.BoolOp):
+        return len(child.values) - 1
+    if isinstance(child, ast.comprehension):
+        return len(child.ifs)
+    if hasattr(ast, "match_case") and isinstance(child, ast.match_case):
+        return 1
+    return 0
+
 
 def _count_decisions(node):
     """Recursively count decision points, skipping nested functions/classes."""
     count = 0
     for child in ast.iter_child_nodes(node):
-        if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        if isinstance(child, _SKIP_TYPES):
             continue
-        if isinstance(child, (ast.If, ast.IfExp)):
-            count += 1
-        elif isinstance(child, (ast.For, ast.AsyncFor, ast.While)):
-            count += 1
-        elif isinstance(child, ast.ExceptHandler):
-            count += 1
-        elif isinstance(child, ast.BoolOp):
-            count += len(child.values) - 1
-        elif isinstance(child, ast.comprehension):
-            count += len(child.ifs)
-        elif hasattr(ast, "match_case") and isinstance(child, ast.match_case):
-            count += 1
-        count += _count_decisions(child)
+        count += _node_decisions(child) + _count_decisions(child)
     return count
 
 

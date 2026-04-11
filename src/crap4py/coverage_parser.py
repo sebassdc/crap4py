@@ -5,28 +5,34 @@ class CoverageSchemaError(ValueError):
     """Raised when the coverage JSON file is missing, malformed, or has an unexpected schema."""
 
 
-def parse_coverage(json_path="coverage.json"):
-    """Parse coverage.py JSON output. Returns dict of file_path -> file_data."""
+def _load_coverage_json(json_path):
     try:
-        f = open(json_path)
+        with open(json_path) as f:
+            return json.load(f)
     except FileNotFoundError:
         raise CoverageSchemaError(f"Coverage file not found: {json_path}")
-    try:
-        data = json.load(f)
     except json.JSONDecodeError as exc:
         raise CoverageSchemaError(f"Invalid JSON in {json_path}: {exc}") from exc
-    finally:
-        f.close()
+
+
+def _validate_coverage_schema(data, json_path):
     if not isinstance(data, dict):
         raise CoverageSchemaError(f"Expected top-level dict in {json_path}")
     if "files" not in data:
         raise CoverageSchemaError(f"Missing 'files' key in {json_path}")
-    if not isinstance(data["files"], dict):
+    files = data["files"]
+    if not isinstance(files, dict):
         raise CoverageSchemaError(f"'files' must be a dict in {json_path}")
-    for path, entry in data["files"].items():
+    for path, entry in files.items():
         if not isinstance(entry, dict):
             raise CoverageSchemaError(f"Entry for '{path}' must be a dict in {json_path}")
-    return data["files"]
+    return files
+
+
+def parse_coverage(json_path="coverage.json"):
+    """Parse coverage.py JSON output. Returns dict of file_path -> file_data."""
+    data = _load_coverage_json(json_path)
+    return _validate_coverage_schema(data, json_path)
 
 
 def coverage_for_range(file_data, start_line, end_line):
