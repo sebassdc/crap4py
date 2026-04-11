@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "crap4py"
+version = "0.1.0"
+requires-python = ">=3.8"
+dependencies = ["pytest>=7", "coverage[toml]>=7"]
+
+[project.scripts]
+crap4py = "crap4py.__main__:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"crap4py" = ["skill/SKILL.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.coverage.run]
+source = ["src"]
+branch = true
+
+[tool.coverage.json]
+output = "coverage.json"
