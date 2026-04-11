@@ -95,6 +95,23 @@ class TestUninstall:
         out = capsys.readouterr().out
         assert "Removed" in out
 
+    def test_uninstall_nonempty_dir_is_tolerated(self, tmp_path, capsys):
+        # If the target dir has other files, rmdir will raise OSError.
+        # _uninstall should swallow it and still report success.
+        target = tmp_path / ".agents" / "skills" / "crap4py"
+        target.mkdir(parents=True)
+        (target / "SKILL.md").write_text("skill content")
+        (target / "extra.txt").write_text("other file")
+
+        with patch("crap4py.skill_cmd._GLOBAL_TARGET", target), \
+             patch("crap4py.skill_cmd._PROJECT_TARGET", tmp_path / "nonexistent"):
+            run_skill_cmd(["uninstall"])
+
+        assert not (target / "SKILL.md").exists()
+        assert target.exists()  # directory left behind because it's not empty
+        out = capsys.readouterr().out
+        assert "Removed" in out
+
     def test_uninstall_not_installed(self, tmp_path, capsys):
         with patch("crap4py.skill_cmd._GLOBAL_TARGET", tmp_path / "nonexistent"), \
              patch("crap4py.skill_cmd._PROJECT_TARGET", tmp_path / "also_nonexistent"):

@@ -100,3 +100,15 @@ class TestParseCoverage:
         json_file.write_text(json.dumps({"files": [1, 2, 3]}))
         with pytest.raises(CoverageSchemaError, match="'files' must be a dict"):
             parse_coverage(str(json_file))
+
+    def test_parse_coverage_top_level_not_dict(self, tmp_path):
+        json_file = tmp_path / "coverage.json"
+        json_file.write_text(json.dumps([1, 2, 3]))
+        with pytest.raises(CoverageSchemaError, match="Expected top-level dict"):
+            parse_coverage(str(json_file))
+
+    def test_parse_coverage_entry_not_dict(self, tmp_path):
+        json_file = tmp_path / "coverage.json"
+        json_file.write_text(json.dumps({"files": {"src/foo.py": "not-a-dict"}}))
+        with pytest.raises(CoverageSchemaError, match="Entry for 'src/foo.py' must be a dict"):
+            parse_coverage(str(json_file))
