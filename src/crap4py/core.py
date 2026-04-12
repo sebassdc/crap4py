@@ -7,9 +7,19 @@ from crap4py.crap import crap_score
 from crap4py.models import CrapEntry
 
 
+def find_source_files_with_options(src_dirs, excludes):
+    """Find .py files across multiple src dirs, filtering by exclude patterns."""
+    file_set = set()
+    for src_dir in src_dirs:
+        for f in _glob.glob(f"{src_dir}/**/*.py", recursive=True):
+            if not any(ex in f for ex in excludes):
+                file_set.add(f)
+    return sorted(file_set)
+
+
 def find_source_files(source_dir="src"):
     """Find all .py files under source_dir/, sorted."""
-    return sorted(_glob.glob(f"{source_dir}/**/*.py", recursive=True))
+    return find_source_files_with_options(src_dirs=[source_dir], excludes=[])
 
 
 def filter_sources(files, module_filters):

@@ -1,5 +1,5 @@
 import pytest
-from crap4py.core import analyze_file, build_entries, filter_sources, find_source_files
+from crap4py.core import analyze_file, build_entries, filter_sources, find_source_files, find_source_files_with_options
 from crap4py.models import CrapEntry, FunctionInfo
 
 
@@ -127,3 +127,59 @@ class TestAnalyzeFile:
         entries = analyze_file(source_path, {}, source_dir=str(tmp_path / "lib"))
         assert len(entries) == 1
         assert entries[0].module == "pkg.mod"
+
+
+class TestFindSourceFilesWithOptions:
+    def test_excludes_pattern(self, tmp_path, monkeypatch):
+        pkg = tmp_path / "src" / "pkg"
+        pkg.mkdir(parents=True)
+        (pkg / "keep.py").write_text("x = 1\n")
+        (pkg / "test_skip.py").write_text("x = 2\n")
+        monkeypatch.chdir(tmp_path)
+        result = find_source_files_with_options(src_dirs=["src"], excludes=["test_skip"])
+        assert len(result) == 1
+        assert "keep.py" in result[0]
+        assert all("test_skip" not in f for f in result)
+
+    def test_multiple_excludes(self, tmp_path, monkeypatch):
+        pkg = tmp_path / "src" / "pkg"
+        pkg.mkdir(parents=True)
+        (pkg / "keep.py").write_text("x = 1\n")
+        (pkg / "skip_a.py").write_text("x = 2\n")
+        (pkg / "skip_b.py").write_text("x = 3\n")
+        monkeypatch.chdir(tmp_path)
+        result = find_source_files_with_options(src_dirs=["src"], excludes=["skip_a", "skip_b"])
+        assert len(result) == 1
+        assert "keep.py" in result[0]
+
+    def test_multiple_src_dirs(self, tmp_path, monkeypatch):
+        dir_a = tmp_path / "src_a" / "pkg"
+        dir_b = tmp_path / "src_b" / "pkg"
+        dir_a.mkdir(parents=True)
+        dir_b.mkdir(parents=True)
+        (dir_a / "a.py").write_text("x = 1\n")
+        (dir_b / "b.py").write_text("x = 2\n")
+        monkeypatch.chdir(tmp_path)
+        result = find_source_files_with_options(src_dirs=["src_a", "src_b"], excludes=[])
+        assert len(result) == 2
+        paths_str = " ".join(result)
+        assert "a.py" in paths_str
+        assert "b.py" in paths_str
+
+    def test_deduplicates(self, tmp_path, monkeypatch):
+        pkg = tmp_path / "src" / "pkg"
+        pkg.mkdir(parents=True)
+        (pkg / "mod.py").write_text("x = 1\n")
+        monkeypatch.chdir(tmp_path)
+        result = find_source_files_with_options(src_dirs=["src", "src"], excludes=[])
+        assert len(result) == 1
+
+    def test_sorted_output(self, tmp_path, monkeypatch):
+        pkg = tmp_path / "src" / "pkg"
+        pkg.mkdir(parents=True)
+        (pkg / "z_last.py").write_text("x = 1\n")
+        (pkg / "a_first.py").write_text("x = 2\n")
+        (pkg / "m_middle.py").write_text("x = 3\n")
+        monkeypatch.chdir(tmp_path)
+        result = find_source_files_with_options(src_dirs=["src"], excludes=[])
+        assert result == sorted(result)
