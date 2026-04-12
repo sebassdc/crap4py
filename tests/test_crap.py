@@ -1,4 +1,13 @@
-from crap4py.crap import crap_score, format_report, sort_by_crap
+import json
+
+from crap4py.crap import (
+    crap_score,
+    format_csv_report,
+    format_json_report,
+    format_markdown_report,
+    format_report,
+    sort_by_crap,
+)
 from crap4py.models import CrapEntry
 
 
@@ -70,3 +79,95 @@ class TestFormatReport:
         ]
         report = format_report(entries)
         assert report.index("alpha") < report.index("beta")
+
+
+class TestFormatJsonReport:
+    def test_valid_json(self):
+        entries = [CrapEntry(name="foo", module="mod.bar", complexity=3, coverage=85.0, crap=4.5)]
+        result = format_json_report(entries)
+        parsed = json.loads(result)
+        assert isinstance(parsed, dict)
+
+    def test_correct_fields(self):
+        entries = [CrapEntry(name="foo", module="mod.bar", complexity=3, coverage=85.0, crap=4.5123)]
+        parsed = json.loads(format_json_report(entries))
+        assert parsed["tool"] == "crap4py"
+        assert len(parsed["entries"]) == 1
+        entry = parsed["entries"][0]
+        assert entry["name"] == "foo"
+        assert entry["module"] == "mod.bar"
+        assert entry["complexity"] == 3
+        assert entry["coverage"] == 85.0
+        assert entry["crap"] == 4.5  # rounded to 1 decimal
+
+    def test_empty_entries(self):
+        parsed = json.loads(format_json_report([]))
+        assert parsed["tool"] == "crap4py"
+        assert parsed["entries"] == []
+
+    def test_indent(self):
+        result = format_json_report([])
+        # indent=2 means multiline with spaces
+        assert "\n" in result
+        assert "  " in result
+
+
+class TestFormatMarkdownReport:
+    def test_header(self):
+        report = format_markdown_report([])
+        assert "# CRAP Report" in report
+
+    def test_separator_row(self):
+        report = format_markdown_report([])
+        assert "|---|---|---:|---:|---:|" in report
+
+    def test_column_headers(self):
+        report = format_markdown_report([])
+        assert "| Function | Module | CC | Cov% | CRAP |" in report
+
+    def test_entry_row(self):
+        entries = [CrapEntry(name="foo", module="mod.bar", complexity=3, coverage=85.0, crap=4.5)]
+        report = format_markdown_report(entries)
+        assert "| foo | mod.bar | 3 | 85.0% | 4.5 |" in report
+
+    def test_multiple_entries(self):
+        entries = [
+            CrapEntry(name="alpha", module="mod", complexity=2, coverage=100.0, crap=2.0),
+            CrapEntry(name="beta", module="mod", complexity=5, coverage=0.0, crap=30.0),
+        ]
+        report = format_markdown_report(entries)
+        assert "alpha" in report
+        assert "beta" in report
+
+
+class TestFormatCsvReport:
+    def test_header_row(self):
+        result = format_csv_report([])
+        lines = result.strip().split("\n")
+        assert lines[0] == "Function,Module,CC,Coverage,CRAP"
+
+    def test_data_row(self):
+        entries = [CrapEntry(name="foo", module="mod.bar", complexity=3, coverage=85.0, crap=4.5)]
+        result = format_csv_report(entries)
+        lines = result.strip().split("\n")
+        assert lines[1] == "foo,mod.bar,3,85.0,4.5"
+
+    def test_trailing_newline(self):
+        result = format_csv_report([])
+        assert result.endswith("\n")
+
+    def test_comma_quoting(self):
+        entries = [CrapEntry(name="foo,bar", module="mod", complexity=1, coverage=100.0, crap=1.0)]
+        result = format_csv_report(entries)
+        lines = result.strip().split("\n")
+        # Field with comma should be quoted
+        assert '"foo,bar"' in lines[1]
+
+    def test_multiple_rows(self):
+        entries = [
+            CrapEntry(name="a", module="mod", complexity=1, coverage=100.0, crap=1.0),
+            CrapEntry(name="b", module="mod", complexity=2, coverage=50.0, crap=5.0),
+        ]
+        result = format_csv_report(entries)
+        lines = result.strip().split("\n")
+        assert len(lines) == 3  # header + 2 data rows
