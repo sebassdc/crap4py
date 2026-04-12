@@ -439,6 +439,10 @@ uv run pytest tests/        # run tests
 uv run python -m crap4py    # run on own source
 ```
 
+## Inspiration
+
+Inspired by [crap4clj](https://github.com/unclebob/crap4clj) by Robert C. Martin (Uncle Bob).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
