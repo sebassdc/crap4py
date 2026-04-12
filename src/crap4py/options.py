@@ -24,19 +24,13 @@ class CliOptions:
 _VALID_OUTPUTS = {"text", "json", "markdown", "csv"}
 _VALID_RUNNERS = {"pytest", "unittest"}
 
-# Flags that consume the next argument
-_VALUE_FLAGS = {
-    "--output",
-    "--src",
-    "--timeout",
-    "--runner",
-    "--coverage-command",
-    "--exclude",
-    "--fail-on-crap",
-    "--fail-on-complexity",
-    "--fail-on-coverage-below",
-    "--top",
-    "--config",
+# Simple flags that set a field to a fixed value (no argument consumed)
+_SIMPLE_FLAGS = {
+    "--help": ("mode", "help"),
+    "-h": ("mode", "help"),
+    "--version": ("mode", "version"),
+    "-v": ("mode", "version"),
+    "--json": ("output", "json"),
 }
 
 
@@ -70,6 +64,66 @@ def _parse_positive_int(value: str, flag: str) -> int:
     return n
 
 
+def _apply_validated_choice(opts, value, field, valid_set, label):
+    if value not in valid_set:
+        raise ValueError(
+            f"Invalid {label} '{value}'. Must be one of: {', '.join(sorted(valid_set))}"
+        )
+    setattr(opts, field, value)
+
+
+def _apply_timeout(opts, value):
+    try:
+        n = int(value)
+        if str(n) != value:
+            raise ValueError()
+    except ValueError:
+        raise ValueError("--timeout must be a positive number")
+    if n <= 0:
+        raise ValueError("--timeout must be a positive number")
+    opts.timeout_s = n
+
+
+def _apply_coverage_below(opts, value):
+    try:
+        n = float(value)
+    except ValueError:
+        raise ValueError(
+            "--fail-on-coverage-below must be a number between 0 and 100"
+        )
+    if n < 0 or n > 100:
+        raise ValueError(
+            "--fail-on-coverage-below must be a number between 0 and 100"
+        )
+    opts.fail_on_coverage_below = n
+
+
+# Handlers for flags that consume the next argument: flag -> (opts, value) -> None
+_FLAG_HANDLERS = {
+    "--output": lambda opts, val: _apply_validated_choice(
+        opts, val, "output", _VALID_OUTPUTS, "output format",
+    ),
+    "--src": lambda opts, val: setattr(opts, "src_dir", val),
+    "--timeout": _apply_timeout,
+    "--runner": lambda opts, val: _apply_validated_choice(
+        opts, val, "runner", _VALID_RUNNERS, "runner",
+    ),
+    "--coverage-command": lambda opts, val: setattr(opts, "coverage_command", val),
+    "--exclude": lambda opts, val: opts.excludes.append(val),
+    "--fail-on-crap": lambda opts, val: setattr(
+        opts, "fail_on_crap", _parse_positive_float(val, "--fail-on-crap"),
+    ),
+    "--fail-on-complexity": lambda opts, val: setattr(
+        opts, "fail_on_complexity", _parse_positive_float(val, "--fail-on-complexity"),
+    ),
+    "--fail-on-coverage-below": _apply_coverage_below,
+    "--top": lambda opts, val: setattr(
+        opts, "top", _parse_positive_int(val, "--top"),
+    ),
+    "--config": lambda opts, val: setattr(opts, "config_path", val),
+}
+
+
 def parse_options(argv: list) -> CliOptions:
     """Parse CLI arguments into a CliOptions instance.
 
@@ -88,85 +142,17 @@ def parse_options(argv: list) -> CliOptions:
     while i < len(argv):
         arg = argv[i]
 
-        if arg in ("--help", "-h"):
-            opts.mode = "help"
+        if arg in _SIMPLE_FLAGS:
+            field, value = _SIMPLE_FLAGS[arg]
+            setattr(opts, field, value)
             i += 1
-        elif arg in ("--version", "-v"):
-            opts.mode = "version"
-            i += 1
-        elif arg == "--json":
-            opts.output = "json"
-            i += 1
-        elif arg == "--output":
-            val = _consume_value(argv, i, "--output")
-            if val not in _VALID_OUTPUTS:
-                raise ValueError(
-                    f"Invalid output format '{val}'. Must be one of: {', '.join(sorted(_VALID_OUTPUTS))}"
-                )
-            opts.output = val
-            i += 2
-        elif arg == "--src":
-            opts.src_dir = _consume_value(argv, i, "--src")
-            i += 2
-        elif arg == "--timeout":
-            val = _consume_value(argv, i, "--timeout")
-            try:
-                n = int(val)
-                if str(n) != val:
-                    raise ValueError()
-            except ValueError:
-                raise ValueError("--timeout must be a positive number")
-            if n <= 0:
-                raise ValueError("--timeout must be a positive number")
-            opts.timeout_s = n
-            i += 2
-        elif arg == "--runner":
-            val = _consume_value(argv, i, "--runner")
-            if val not in _VALID_RUNNERS:
-                raise ValueError(
-                    f"Invalid runner '{val}'. Must be one of: {', '.join(sorted(_VALID_RUNNERS))}"
-                )
-            opts.runner = val
-            i += 2
-        elif arg == "--coverage-command":
-            opts.coverage_command = _consume_value(argv, i, "--coverage-command")
-            i += 2
-        elif arg == "--exclude":
-            opts.excludes.append(_consume_value(argv, i, "--exclude"))
-            i += 2
-        elif arg == "--fail-on-crap":
-            val = _consume_value(argv, i, "--fail-on-crap")
-            opts.fail_on_crap = _parse_positive_float(val, "--fail-on-crap")
-            i += 2
-        elif arg == "--fail-on-complexity":
-            val = _consume_value(argv, i, "--fail-on-complexity")
-            opts.fail_on_complexity = _parse_positive_float(val, "--fail-on-complexity")
-            i += 2
-        elif arg == "--fail-on-coverage-below":
-            val = _consume_value(argv, i, "--fail-on-coverage-below")
-            try:
-                n = float(val)
-            except ValueError:
-                raise ValueError(
-                    f"--fail-on-coverage-below must be a number between 0 and 100"
-                )
-            if n < 0 or n > 100:
-                raise ValueError(
-                    f"--fail-on-coverage-below must be a number between 0 and 100"
-                )
-            opts.fail_on_coverage_below = n
-            i += 2
-        elif arg == "--top":
-            val = _consume_value(argv, i, "--top")
-            opts.top = _parse_positive_int(val, "--top")
-            i += 2
-        elif arg == "--config":
-            opts.config_path = _consume_value(argv, i, "--config")
+        elif arg in _FLAG_HANDLERS:
+            val = _consume_value(argv, i, arg)
+            _FLAG_HANDLERS[arg](opts, val)
             i += 2
         elif arg.startswith("-"):
             raise ValueError(f"Unknown option: {arg}")
         else:
-            # Positional argument = filter
             opts.filters.append(arg)
             i += 1
 

@@ -25,87 +25,69 @@ def evaluate_thresholds(entries, opts):
 
     Returns a failure message string if any threshold is exceeded, or None.
     """
-    if opts.fail_on_crap is not None:
-        violators = [e for e in entries if e.crap >= opts.fail_on_crap]
-        if violators:
-            return (
-                f"CI failed: {len(violators)} function(s) exceed "
-                f"CRAP threshold of {opts.fail_on_crap}"
-            )
-
-    if opts.fail_on_complexity is not None:
-        violators = [e for e in entries if e.complexity >= opts.fail_on_complexity]
-        if violators:
-            return (
-                f"CI failed: {len(violators)} function(s) exceed "
-                f"complexity threshold of {opts.fail_on_complexity}"
-            )
-
-    if opts.fail_on_coverage_below is not None:
-        violators = [e for e in entries if e.coverage < opts.fail_on_coverage_below]
-        if violators:
-            return (
-                f"CI failed: {len(violators)} function(s) below "
-                f"coverage threshold of {opts.fail_on_coverage_below}"
-            )
+    checks = [
+        (opts.fail_on_crap, lambda e: e.crap >= opts.fail_on_crap, "exceed", "CRAP"),
+        (opts.fail_on_complexity, lambda e: e.complexity >= opts.fail_on_complexity, "exceed", "complexity"),
+        (opts.fail_on_coverage_below, lambda e: e.coverage < opts.fail_on_coverage_below, "below", "coverage"),
+    ]
+    for threshold, predicate, verb, label in checks:
+        if threshold is not None:
+            violators = [e for e in entries if predicate(e)]
+            if violators:
+                return (
+                    f"CI failed: {len(violators)} function(s) {verb} "
+                    f"{label} threshold of {threshold}"
+                )
 
     return None
 
 
+def _run_subprocess(cmd, *, shell=False, timeout=None, label="command"):
+    """Run a subprocess, returning True on success."""
+    try:
+        result = subprocess.run(
+            cmd, shell=shell, timeout=timeout,
+            capture_output=True, text=True,
+        )
+    except subprocess.TimeoutExpired:
+        print(f"{label} timed out", file=sys.stderr)
+        return False
+    if result.returncode != 0:
+        print(f"{label} failed", file=sys.stderr)
+        return False
+    return True
+
+
+def _build_coverage_command(opts):
+    """Build the coverage run command. Returns (cmd, shell)."""
+    if opts.coverage_command:
+        return opts.coverage_command, True
+    runner = opts.runner or detect_runner()
+    if runner == "unittest":
+        return [
+            sys.executable, "-m", "coverage", "run",
+            "-m", "unittest", "discover",
+        ], False
+    return [sys.executable, "-m", "coverage", "run", "-m", "pytest"], False
+
+
 def _run_coverage_step(opts):
     """Run the coverage collection step. Returns True on success, False on failure."""
-    # Clean stale files
     for stale in (".coverage", "coverage.json"):
         if os.path.exists(stale):
             os.remove(stale)
 
-    timeout = opts.timeout_s
+    cmd_run, use_shell = _build_coverage_command(opts)
 
-    # Step 1: run tests with coverage
-    if opts.coverage_command:
-        cmd_run = opts.coverage_command
-        use_shell = True
-    else:
-        runner = opts.runner or detect_runner()
-        if runner == "unittest":
-            cmd_run = [
-                sys.executable, "-m", "coverage", "run",
-                "-m", "unittest", "discover",
-            ]
-        else:
-            cmd_run = [
-                sys.executable, "-m", "coverage", "run", "-m", "pytest",
-            ]
-        use_shell = False
-
-    try:
-        result = subprocess.run(
-            cmd_run, shell=use_shell, timeout=timeout,
-            capture_output=True, text=True,
-        )
-    except subprocess.TimeoutExpired:
-        print("coverage run timed out", file=sys.stderr)
+    if not _run_subprocess(
+        cmd_run, shell=use_shell, timeout=opts.timeout_s, label="coverage run",
+    ):
         return False
 
-    if result.returncode != 0:
-        print("coverage run failed", file=sys.stderr)
-        return False
-
-    # Step 2: generate JSON report
-    cmd_json = [sys.executable, "-m", "coverage", "json"]
-    try:
-        result = subprocess.run(
-            cmd_json, timeout=timeout, capture_output=True, text=True,
-        )
-    except subprocess.TimeoutExpired:
-        print("coverage json timed out", file=sys.stderr)
-        return False
-
-    if result.returncode != 0:
-        print("coverage json failed", file=sys.stderr)
-        return False
-
-    return True
+    return _run_subprocess(
+        [sys.executable, "-m", "coverage", "json"],
+        timeout=opts.timeout_s, label="coverage json",
+    )
 
 
 def run_report(opts):

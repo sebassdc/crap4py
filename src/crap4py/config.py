@@ -65,20 +65,18 @@ def merge_config_into_options(opts: CliOptions, config: Dict[str, Any]) -> CliOp
     kwargs: Dict[str, Any] = {}
 
     # Fields with non-None defaults — config used only when CLI kept the default
-    if opts.src_dir == "src" and "src" in config:
-        kwargs["src_dir"] = config["src"]
-
-    if not opts.excludes and "exclude" in config:
-        kwargs["excludes"] = config["exclude"]
-
-    if opts.output == "text" and "output" in config:
-        kwargs["output"] = config["output"]
-
-    if opts.timeout_s == 300 and "timeout" in config:
-        kwargs["timeout_s"] = config["timeout"]
+    _defaulted = [
+        ("src", "src_dir", "src"),
+        ("exclude", "excludes", []),
+        ("output", "output", "text"),
+        ("timeout", "timeout_s", 300),
+    ]
+    for config_key, field_name, default_val in _defaulted:
+        if getattr(opts, field_name) == default_val and config_key in config:
+            kwargs[field_name] = config[config_key]
 
     # Optional fields — config used only when CLI is None
-    _optional_map = {
+    _optional = {
         "runner": "runner",
         "coverageCommand": "coverage_command",
         "failOnCrap": "fail_on_crap",
@@ -86,8 +84,7 @@ def merge_config_into_options(opts: CliOptions, config: Dict[str, Any]) -> CliOp
         "failOnCoverageBelow": "fail_on_coverage_below",
         "top": "top",
     }
-
-    for config_key, field_name in _optional_map.items():
+    for config_key, field_name in _optional.items():
         if getattr(opts, field_name) is None and config_key in config:
             kwargs[field_name] = config[config_key]
 
