@@ -1,142 +1,135 @@
-import subprocess
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch, MagicMock
 
 import pytest
 
 from crap4py.__main__ import main
-from crap4py.models import CrapEntry
+from crap4py.options import CliOptions
 
 
-FAKE_ENTRIES = [CrapEntry(name="foo", module="bar", complexity=1, coverage=100.0, crap=1.0)]
+class TestMainHelp:
+    @patch.object(sys, "argv", ["crap4py", "--help"])
+    def test_help_flag_prints_usage(self, capsys):
+        main()
+        out = capsys.readouterr().out
+        assert "Usage:" in out
+        assert "--src" in out
+        assert "--help" in out
+
+    @patch.object(sys, "argv", ["crap4py", "-h"])
+    def test_short_help_flag(self, capsys):
+        main()
+        out = capsys.readouterr().out
+        assert "Usage:" in out
 
 
-def _make_run(returncode=0):
-    result = MagicMock()
-    result.returncode = returncode
-    return result
+class TestMainVersion:
+    @patch.object(sys, "argv", ["crap4py", "--version"])
+    @patch("crap4py.__main__.pkg_version", side_effect=Exception("not installed"))
+    def test_version_fallback(self, mock_pkg, capsys):
+        main()
+        out = capsys.readouterr().out.strip()
+        assert "0.1.0" in out
+
+    @patch.object(sys, "argv", ["crap4py", "-v"])
+    @patch("crap4py.__main__.pkg_version", return_value="1.2.3")
+    def test_version_from_metadata(self, mock_pkg, capsys):
+        main()
+        out = capsys.readouterr().out.strip()
+        assert out == "1.2.3"
 
 
-@patch("crap4py.__main__.format_report", return_value="REPORT")
-@patch("crap4py.__main__.sort_by_crap", return_value=FAKE_ENTRIES)
-@patch("crap4py.__main__.analyze_file", return_value=FAKE_ENTRIES)
-@patch("crap4py.__main__.parse_coverage", return_value={})
-@patch("crap4py.__main__.filter_sources", side_effect=lambda s, f: s)
-@patch("crap4py.__main__.find_source_files", return_value=["src/crap4py/core.py"])
-@patch("crap4py.__main__.subprocess.run", return_value=_make_run(0))
-@patch("crap4py.__main__.os.path.exists", return_value=False)
-def test_happy_path_no_stale_files(mock_exists, mock_run, mock_find, mock_filter,
-                                    mock_parse, mock_analyze, mock_sort, mock_fmt, capsys):
-    main()
+class TestMainSkill:
+    @patch("crap4py.__main__._handle_skill_command", return_value=True)
+    def test_skill_command_intercepted(self, mock_skill):
+        main()
+        mock_skill.assert_called_once()
 
-    mock_exists.assert_any_call(".coverage")
-    mock_exists.assert_any_call("coverage.json")
-    assert mock_run.call_count == 2
-    out = capsys.readouterr().out
-    assert "REPORT" in out
+    @patch("crap4py.__main__._handle_skill_command", return_value=True)
+    @patch("crap4py.__main__.run_report")
+    def test_skill_command_prevents_report(self, mock_report, mock_skill):
+        main()
+        mock_report.assert_not_called()
 
 
-@patch("crap4py.__main__.format_report", return_value="REPORT")
-@patch("crap4py.__main__.sort_by_crap", return_value=FAKE_ENTRIES)
-@patch("crap4py.__main__.analyze_file", return_value=FAKE_ENTRIES)
-@patch("crap4py.__main__.parse_coverage", return_value={})
-@patch("crap4py.__main__.filter_sources", side_effect=lambda s, f: s)
-@patch("crap4py.__main__.find_source_files", return_value=["src/crap4py/core.py"])
-@patch("crap4py.__main__.subprocess.run", return_value=_make_run(0))
-@patch("crap4py.__main__.os.remove")
-@patch("crap4py.__main__.os.path.exists", return_value=True)
-def test_stale_files_are_deleted(mock_exists, mock_remove, mock_run, mock_find,
-                                  mock_filter, mock_parse, mock_analyze, mock_sort, mock_fmt):
-    main()
+class TestMainReport:
+    @patch.object(sys, "argv", ["crap4py"])
+    @patch("crap4py.__main__.load_config", return_value={})
+    @patch("crap4py.__main__.merge_config_into_options", side_effect=lambda opts, cfg: opts)
+    @patch("crap4py.__main__.run_report", return_value=0)
+    def test_default_args_calls_run_report(self, mock_report, mock_merge, mock_config):
+        main()
+        mock_report.assert_called_once()
 
-    mock_remove.assert_any_call(".coverage")
-    mock_remove.assert_any_call("coverage.json")
+    @patch.object(sys, "argv", ["crap4py", "--src", "lib", "--json", "parser"])
+    @patch("crap4py.__main__.load_config", return_value={})
+    @patch("crap4py.__main__.merge_config_into_options", side_effect=lambda opts, cfg: opts)
+    @patch("crap4py.__main__.run_report", return_value=0)
+    def test_options_forwarded_to_report(self, mock_report, mock_merge, mock_config):
+        main()
+        opts = mock_report.call_args[0][0]
+        assert opts.src_dir == "lib"
+        assert opts.output == "json"
+        assert opts.filters == ["parser"]
 
+    @patch.object(sys, "argv", ["crap4py"])
+    @patch("crap4py.__main__.load_config", return_value={})
+    @patch("crap4py.__main__.merge_config_into_options", side_effect=lambda opts, cfg: opts)
+    @patch("crap4py.__main__.run_report", return_value=1)
+    def test_nonzero_exit_code_calls_sys_exit(self, mock_report, mock_merge, mock_config):
+        with pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 1
 
-@patch("crap4py.__main__.sys.exit", side_effect=SystemExit(1))
-@patch("crap4py.__main__.subprocess.run", return_value=_make_run(1))
-@patch("crap4py.__main__.os.path.exists", return_value=False)
-def test_coverage_run_failure_exits(mock_exists, mock_run, mock_exit, capsys):
-    with pytest.raises(SystemExit) as exc:
+    @patch.object(sys, "argv", ["crap4py"])
+    @patch("crap4py.__main__.load_config", return_value={})
+    @patch("crap4py.__main__.merge_config_into_options", side_effect=lambda opts, cfg: opts)
+    @patch("crap4py.__main__.run_report", return_value=0)
+    def test_zero_exit_does_not_call_sys_exit(self, mock_report, mock_merge, mock_config):
+        # Should not raise
         main()
 
-    assert exc.value.code == 1
-    mock_exit.assert_called_once_with(1)
-    out = capsys.readouterr().out
-    assert "coverage run failed" in out
-    assert "1" in out
+
+class TestMainInvalidOption:
+    @patch.object(sys, "argv", ["crap4py", "--output", "invalid"])
+    def test_invalid_output_format_exits_2(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        err = capsys.readouterr().err
+        assert "Invalid output format" in err
+
+    @patch.object(sys, "argv", ["crap4py", "--unknown-flag"])
+    def test_unknown_flag_exits_2(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            main()
+        assert exc.value.code == 2
+        err = capsys.readouterr().err
+        assert "Unknown option" in err
 
 
-@patch("crap4py.__main__.sys.exit", side_effect=SystemExit(1))
-@patch("crap4py.__main__.subprocess.run", side_effect=[_make_run(0), _make_run(2)])
-@patch("crap4py.__main__.os.path.exists", return_value=False)
-def test_coverage_json_failure_exits(mock_exists, mock_run, mock_exit, capsys):
-    with pytest.raises(SystemExit) as exc:
+class TestMainConfig:
+    @patch.object(sys, "argv", ["crap4py"])
+    @patch("crap4py.__main__.run_report", return_value=0)
+    @patch("crap4py.__main__.load_config", return_value={"src": "lib"})
+    def test_config_merged_into_options(self, mock_config, mock_report):
         main()
+        merged_opts = mock_report.call_args[0][0]
+        # Config should override the default "src" -> "lib"
+        assert merged_opts.src_dir == "lib"
 
-    assert exc.value.code == 1
-    mock_exit.assert_called_once_with(1)
-    out = capsys.readouterr().out
-    assert "coverage json failed" in out
-    assert "2" in out
-
-
-@patch("crap4py.__main__.format_report", return_value="REPORT")
-@patch("crap4py.__main__.sort_by_crap", return_value=FAKE_ENTRIES)
-@patch("crap4py.__main__.analyze_file", return_value=FAKE_ENTRIES)
-@patch("crap4py.__main__.parse_coverage", return_value={})
-@patch("crap4py.__main__.filter_sources", side_effect=lambda s, f: s)
-@patch("crap4py.__main__.find_source_files", return_value=["src/crap4py/core.py"])
-@patch("crap4py.__main__.subprocess.run", return_value=_make_run(0))
-@patch("crap4py.__main__.os.path.exists", return_value=False)
-def test_argv_filters_forwarded(mock_exists, mock_run, mock_find, mock_filter,
-                                 mock_parse, mock_analyze, mock_sort, mock_fmt):
-    with patch.object(sys, "argv", ["crap4py", "complexity", "core"]):
+    @patch.object(sys, "argv", ["crap4py", "--src", "custom"])
+    @patch("crap4py.__main__.run_report", return_value=0)
+    @patch("crap4py.__main__.load_config", return_value={"src": "lib"})
+    def test_cli_takes_precedence_over_config(self, mock_config, mock_report):
         main()
+        merged_opts = mock_report.call_args[0][0]
+        # CLI --src custom should win over config src=lib
+        assert merged_opts.src_dir == "custom"
 
-    mock_filter.assert_called_once_with(["src/crap4py/core.py"], ["complexity", "core"])
-
-
-@patch("crap4py.__main__.sys.exit", side_effect=SystemExit(1))
-@patch("crap4py.__main__.subprocess.run", side_effect=subprocess.TimeoutExpired(cmd="test", timeout=300))
-@patch("crap4py.__main__.os.path.exists", return_value=False)
-def test_coverage_run_timeout_exits(mock_exists, mock_run, mock_exit, capsys):
-    with pytest.raises(SystemExit) as exc:
+    @patch.object(sys, "argv", ["crap4py", "--config", "/tmp/my.json"])
+    @patch("crap4py.__main__.run_report", return_value=0)
+    @patch("crap4py.__main__.load_config", return_value={})
+    def test_explicit_config_path_forwarded(self, mock_config, mock_report):
         main()
-
-    assert exc.value.code == 1
-    mock_exit.assert_called_once_with(1)
-    out = capsys.readouterr().out
-    assert "coverage run timed out" in out
-
-
-@patch("crap4py.__main__.sys.exit", side_effect=SystemExit(1))
-@patch("crap4py.__main__.subprocess.run", side_effect=[_make_run(0), subprocess.TimeoutExpired(cmd="test", timeout=300)])
-@patch("crap4py.__main__.os.path.exists", return_value=False)
-def test_coverage_json_timeout_exits(mock_exists, mock_run, mock_exit, capsys):
-    with pytest.raises(SystemExit) as exc:
-        main()
-
-    assert exc.value.code == 1
-    mock_exit.assert_called_once_with(1)
-    out = capsys.readouterr().out
-    assert "coverage json timed out" in out
-
-
-@patch("crap4py.__main__.format_report", return_value="REPORT")
-@patch("crap4py.__main__.sort_by_crap", return_value=FAKE_ENTRIES)
-@patch("crap4py.__main__.analyze_file", return_value=FAKE_ENTRIES)
-@patch("crap4py.__main__.parse_coverage", return_value={})
-@patch("crap4py.__main__.filter_sources", side_effect=lambda s, f: s)
-@patch("crap4py.__main__.find_source_files", return_value=["src/crap4py/core.py"])
-@patch("crap4py.__main__.subprocess.run", return_value=_make_run(0))
-@patch("crap4py.__main__.os.remove", side_effect=OSError("permission denied"))
-@patch("crap4py.__main__.os.path.exists", return_value=True)
-def test_stale_file_remove_oserror_is_swallowed(
-    mock_exists, mock_remove, mock_run, mock_find, mock_filter,
-    mock_parse, mock_analyze, mock_sort, mock_fmt, capsys,
-):
-    # If os.remove raises, main() should continue without failing.
-    main()
-    out = capsys.readouterr().out
-    assert "REPORT" in out
+        mock_config.assert_called_once_with("/tmp/my.json")
