@@ -48,16 +48,20 @@ def coverage_for_range(file_data, start_line, end_line):
     return 100.0 * covered / total
 
 
+def normalize_path(path):
+    """Normalize path separators to forward slashes."""
+    return path.replace("\\", "/")
+
+
 def source_to_module(source_path, source_dir="src"):
     """Convert a source path to a dotted module name.
 
     Example: 'src/foo/bar.py' -> 'foo.bar'
     """
-    path = source_path
-    prefix_fwd = source_dir + "/"
-    prefix_bwd = source_dir + "\\"
-    if path.startswith(prefix_fwd) or path.startswith(prefix_bwd):
-        path = path[len(prefix_fwd):]
+    path = normalize_path(source_path)
+    prefix = normalize_path(source_dir) + "/"
+    if path.startswith(prefix):
+        path = path[len(prefix):]
     if path.endswith(".py"):
         path = path[:-3]
-    return path.replace("\\", ".").replace("/", ".")
+    return path.replace("/", ".")

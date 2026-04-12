@@ -1,6 +1,6 @@
 import json
 import pytest
-from crap4py.coverage_parser import CoverageSchemaError, coverage_for_range, parse_coverage, source_to_module
+from crap4py.coverage_parser import CoverageSchemaError, coverage_for_range, normalize_path, parse_coverage, source_to_module
 
 
 class TestCoverageForRange:
@@ -54,6 +54,20 @@ class TestSourceToModule:
 
     def test_custom_source_dir_no_match(self):
         assert source_to_module("other/foo/bar.py", source_dir="lib") == "other.foo.bar"
+
+
+class TestNormalizePath:
+    def test_backslash_to_forward(self):
+        assert normalize_path("C:\\Users\\dev\\src\\foo.py") == "C:/Users/dev/src/foo.py"
+
+    def test_forward_slash_unchanged(self):
+        assert normalize_path("src/foo/bar.py") == "src/foo/bar.py"
+
+    def test_mixed_slashes(self):
+        assert normalize_path("src\\foo/bar\\baz.py") == "src/foo/bar/baz.py"
+
+    def test_empty_string(self):
+        assert normalize_path("") == ""
 
 
 class TestParseCoverage:
