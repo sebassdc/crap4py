@@ -407,6 +407,30 @@ crap4py skill uninstall --project
 
 The bundled skill lives inside the published package at `src/crap4py/skill/SKILL.md`.
 
+### Claude Code Symlink
+
+Claude Code discovers skills from its local plugin directory, not from
+`~/.agents/skills/`. After installing, create a symlink so Claude Code picks up
+the skill automatically:
+
+```bash
+# Install the skill to the cross-agent directory first
+crap4py skill install
+
+# Symlink into the Claude Code plugin directory
+mkdir -p ~/.claude/plugins/local/plugins/crap4py/skills/crap4py
+ln -sf ~/.agents/skills/crap4py/SKILL.md \
+       ~/.claude/plugins/local/plugins/crap4py/skills/crap4py/SKILL.md
+```
+
+To verify it worked:
+
+```bash
+ls -l ~/.claude/plugins/local/plugins/crap4py/skills/crap4py/SKILL.md
+```
+
+You should see a symlink pointing to the installed skill file.
+
 ## Development
 
 ```bash
