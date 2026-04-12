@@ -7,7 +7,14 @@ import pytest
 
 from crap4py.models import CrapEntry
 from crap4py.options import CliOptions
-from crap4py.report import detect_runner, evaluate_thresholds, run_report
+from crap4py.report import (
+    detect_runner,
+    evaluate_thresholds,
+    run_report,
+    _build_coverage_command,
+    _run_coverage_step,
+    _run_subprocess,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -21,6 +28,100 @@ def _entry(name="fn", module="mod", complexity=5, coverage=80.0, crap=6.2):
 # ---------------------------------------------------------------------------
 # TestDetectRunner
 # ---------------------------------------------------------------------------
+
+class TestRunSubprocess:
+    @patch("crap4py.report.subprocess.run")
+    def test_success(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0)
+        assert _run_subprocess(["echo", "hi"], label="test") is True
+
+    @patch("crap4py.report.subprocess.run")
+    def test_nonzero_returncode(self, mock_run, capsys):
+        mock_run.return_value = MagicMock(returncode=1)
+        assert _run_subprocess(["fail"], label="test cmd") is False
+        assert "test cmd failed" in capsys.readouterr().err
+
+    @patch("crap4py.report.subprocess.run", side_effect=subprocess.TimeoutExpired("cmd", 5))
+    def test_timeout(self, mock_run, capsys):
+        assert _run_subprocess(["slow"], timeout=5, label="test cmd") is False
+        assert "test cmd timed out" in capsys.readouterr().err
+
+    @patch("crap4py.report.subprocess.run")
+    def test_passes_shell_and_timeout(self, mock_run):
+        mock_run.return_value = MagicMock(returncode=0)
+        _run_subprocess("echo hi", shell=True, timeout=10, label="x")
+        mock_run.assert_called_once_with(
+            "echo hi", shell=True, timeout=10,
+            capture_output=True, text=True,
+        )
+
+
+class TestBuildCoverageCommand:
+    def test_custom_command(self):
+        opts = CliOptions(coverage_command="make cov")
+        cmd, shell = _build_coverage_command(opts)
+        assert cmd == "make cov"
+        assert shell is True
+
+    def test_pytest_runner(self):
+        opts = CliOptions(runner="pytest")
+        cmd, shell = _build_coverage_command(opts)
+        assert "pytest" in cmd
+        assert shell is False
+
+    def test_unittest_runner(self):
+        opts = CliOptions(runner="unittest")
+        cmd, shell = _build_coverage_command(opts)
+        assert "unittest" in cmd
+        assert "discover" in cmd
+        assert shell is False
+
+    def test_default_runner(self):
+        opts = CliOptions()
+        cmd, shell = _build_coverage_command(opts)
+        assert "pytest" in cmd
+        assert shell is False
+
+
+class TestRunCoverageStep:
+    @patch("crap4py.report._run_subprocess", return_value=True)
+    @patch("os.path.exists", return_value=False)
+    def test_success_both_steps(self, mock_exists, mock_sub):
+        opts = CliOptions()
+        assert _run_coverage_step(opts) is True
+        assert mock_sub.call_count == 2
+
+    @patch("crap4py.report._run_subprocess", side_effect=[False])
+    @patch("os.path.exists", return_value=False)
+    def test_first_step_fails(self, mock_exists, mock_sub):
+        opts = CliOptions()
+        assert _run_coverage_step(opts) is False
+        assert mock_sub.call_count == 1
+
+    @patch("crap4py.report._run_subprocess", side_effect=[True, False])
+    @patch("os.path.exists", return_value=False)
+    def test_second_step_fails(self, mock_exists, mock_sub):
+        opts = CliOptions()
+        assert _run_coverage_step(opts) is False
+
+    @patch("crap4py.report._run_subprocess", return_value=True)
+    @patch("os.remove")
+    @patch("os.path.exists", return_value=True)
+    def test_cleans_stale_files(self, mock_exists, mock_remove, mock_sub):
+        opts = CliOptions()
+        _run_coverage_step(opts)
+        mock_remove.assert_any_call(".coverage")
+        mock_remove.assert_any_call("coverage.json")
+
+    @patch("crap4py.report._run_subprocess", return_value=True)
+    @patch("os.path.exists", return_value=False)
+    def test_custom_command_passed_with_shell(self, mock_exists, mock_sub):
+        opts = CliOptions(coverage_command="make coverage")
+        _run_coverage_step(opts)
+        first_call = mock_sub.call_args_list[0]
+        assert first_call[0][0] == "make coverage"
+        assert first_call[1]["shell"] is True
+
 
 class TestDetectRunner:
     def test_defaults_to_pytest(self):
