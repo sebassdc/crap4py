@@ -88,8 +88,8 @@ crap4py --fail-on-crap 30 --fail-on-coverage-below 60 --json > report.json
 ```yaml
 - name: CRAP Report
   run: |
-    pip install crap4py
-    crap4py --fail-on-crap 30 --fail-on-coverage-below 60
+    uv sync
+    uv run crap4py --fail-on-crap 30 --fail-on-coverage-below 60
 ```
 
 ### GitLab CI Example
@@ -97,8 +97,8 @@ crap4py --fail-on-crap 30 --fail-on-coverage-below 60 --json > report.json
 ```yaml
 crap-report:
   script:
-    - pip install crap4py
-    - crap4py --fail-on-crap 30 --json > crap-report.json
+    - uv sync
+    - uv run crap4py --fail-on-crap 30 --json > crap-report.json
   artifacts:
     paths:
       - crap-report.json

@@ -6,13 +6,19 @@ Combines cyclomatic complexity with test coverage to identify functions that are
 
 ## Quick Start
 
-Install as a dev dependency:
+Install the CLI from this checkout:
 
 ```bash
-pip install crap4py
+uv tool install .
 ```
 
-Or add to your `pyproject.toml`:
+For local development in this repository:
+
+```bash
+uv sync
+```
+
+Or, if you're using it in another project, add to your `pyproject.toml`:
 
 ```toml
 [project.optional-dependencies]
@@ -434,7 +440,7 @@ You should see a symlink pointing to the installed skill file.
 ## Development
 
 ```bash
-uv sync --extra dev
+uv sync
 uv run pytest tests/        # run tests
 uv run python -m crap4py    # run on own source
 ```
